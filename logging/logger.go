@@ -149,7 +149,7 @@ func (l *Logger) HandleHTTPRequest(r *http.Request) *LogProcess {
 	}
 }
 
-func (l *Logger) HandleGRCPRequest(ctx context.Context) *LogProcess {
+func (l *Logger) HandleGRPCRequest(ctx context.Context) *LogProcess {
 	st := time.Now()
 
 	// we need to convert the metadata to a httpRequest to extract the span

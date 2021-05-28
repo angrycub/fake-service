@@ -99,7 +99,9 @@ func init() {
 	proto.RegisterType((*Response)(nil), "Response")
 }
 
-func init() { proto.RegisterFile("api.proto", fileDescriptor_00212fb1f9d3bf1c) }
+func init() {
+	proto.RegisterFile("api.proto", fileDescriptor_00212fb1f9d3bf1c)
+}
 
 var fileDescriptor_00212fb1f9d3bf1c = []byte{
 	// 117 bytes of a gzipped FileDescriptorProto
@@ -115,11 +117,11 @@ var fileDescriptor_00212fb1f9d3bf1c = []byte{
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
-var _ grpc.ClientConn
+var _ grpc.ClientConnInterface
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion4
+const _ = grpc.SupportPackageIsVersion6
 
 // FakeServiceClient is the client API for FakeService service.
 //
@@ -129,10 +131,10 @@ type FakeServiceClient interface {
 }
 
 type fakeServiceClient struct {
-	cc *grpc.ClientConn
+	cc grpc.ClientConnInterface
 }
 
-func NewFakeServiceClient(cc *grpc.ClientConn) FakeServiceClient {
+func NewFakeServiceClient(cc grpc.ClientConnInterface) FakeServiceClient {
 	return &fakeServiceClient{cc}
 }
 

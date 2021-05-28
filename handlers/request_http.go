@@ -121,9 +121,9 @@ func (rq *Request) Handle(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// service time is equal to the randomised time - the current time take
+	// service time is equal to the randomized time - the current time take
 	d := rq.duration.Calculate()
-	et := time.Now().Sub(ts)
+	et := time.Since(ts)
 	rd := d - et
 
 	// set the start end end time
@@ -150,7 +150,7 @@ func (rq *Request) Handle(rw http.ResponseWriter, r *http.Request) {
 		hq.SetMetadata("response", strconv.Itoa(http.StatusOK))
 	}
 
-	// caclulcate total elapsed time including delay
+	// Calculate total elapsed time including delay
 	te := time.Now()
 	et = te.Sub(ts)
 

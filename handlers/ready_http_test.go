@@ -61,6 +61,6 @@ func TestReadyReturnsOKResponseWhenDelayElapsed(t *testing.T) {
 	)
 
 	// should be more than 1 call, as there should be at least one unavailable response
-	// this test is not coded to a fixed amound due to varinng speeds on CI
+	// this test is not coded to a fixed amount due to varing speeds on CI
 	assert.Greater(t, calls, 1)
 }

@@ -10,7 +10,7 @@ func generateRandom(max int) int {
 	return rand.Intn(max)
 }
 
-// RequestDuration is a structure which allows the calculation of randomised
+// RequestDuration is a structure which allows the calculation of randomized
 // request durations
 type RequestDuration struct {
 	percentile50 time.Duration

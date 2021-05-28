@@ -1,6 +1,6 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Supported versions
 
 Use this section to tell people about which versions of your project are
 currently being supported with security updates.
@@ -12,7 +12,7 @@ currently being supported with security updates.
 | 4.0.x   | :white_check_mark: |
 | < 4.0   | :x:                |
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
 Use this section to tell people how to report a vulnerability.
 

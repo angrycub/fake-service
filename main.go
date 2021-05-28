@@ -35,7 +35,7 @@ import (
 
 var upstreamURIs = env.String("UPSTREAM_URIS", false, "", "Comma separated URIs of the upstream services to call")
 var upstreamAllowInsecure = env.Bool("UPSTREAM_ALLOW_INSECURE", false, false, "Allow calls to upstream servers, ignoring TLS certificate validation")
-var upstreamWorkers = env.Int("UPSTREAM_WORKERS", false, 1, "Number of parallel workers for calling upstreams, defualt is 1 which is sequential operation")
+var upstreamWorkers = env.Int("UPSTREAM_WORKERS", false, 1, "Number of parallel workers for calling upstreams, default is 1 which is sequential operation")
 
 var serviceType = env.String("SERVER_TYPE", false, "http", "Service type: [http or grpc], default:http. Determines the type of service HTTP or gRPC")
 var message = env.String("MESSAGE", false, "Hello World", "Message to be returned from service")
@@ -69,7 +69,16 @@ var errorDelay = env.Duration("ERROR_DELAY", false, 0*time.Second, "Error delay 
 var rateLimitRPS = env.Float64("RATE_LIMIT", false, 0.0, "Rate in req/second after which service will return an error code")
 var rateLimitCode = env.Int("RATE_LIMIT_CODE", false, 503, "Code to return when service call is rate limited")
 
-// load generation
+// process load generation
+var processLoadCPUCores = env.Float64("PROCESS_LOAD_CPU_CORES", false, -1, "Number of cores to generate fake CPU load over, by default fake-service will use all cores")
+var processLoadCPUPercentage = env.Float64("PROCESS_LOAD_CPU_PERCENTAGE", false, 0, "Percentage of CPU cores to consume as a percentage. I.e: 50, 50% load for LOAD_CPU_CORES. If LOAD_CPU_ALLOCATED is not specified CPU percentage is based on the Total CPU available")
+
+var processLoadMemoryAllocated = env.Int("PROCESS_LOAD_MEMORY", false, 0, "Memory in mebibytes (MiB) consumed by the process")
+var processLoadMemoryVariance = env.Int("PROCESS_LOAD_MEMORY_VARIANCE", false, 0, "Percentage variance of the memory consumed per tick, i.e with a value of 50 = 50%, and given a PROCESS_LOAD_MEMORY of 1024 bytes, actual consumption per tick would be in the range 516 - 1540 bytes")
+var processLoadMemoryVarianceFunction = env.String("PROCESS_LOAD_MEMORY_VARIANCE_FUNCTION", false, "linear", "Function used to vary memory over time. Valid values: random")
+var processLoadMemoryVariancePeriod = env.Int("PROCESS_LOAD_MEMORY_VARIANCE_PERIOD", false, 1, "Period for periodic variance functions in seconds. Valid values: random")
+
+// request load generation
 var loadCPUAllocated = env.Float64("LOAD_CPU_ALLOCATED", false, 0, "MHz of CPU allocated to the service, when specified, load percentage is a percentage of CPU allocated")
 var loadCPUClockSpeed = env.Float64("LOAD_CPU_CLOCK_SPEED", false, 1000, "MHz of a Single logical core, default 1000Mhz")
 var loadCPUCores = env.Float64("LOAD_CPU_CORES", false, -1, "Number of cores to generate fake CPU load over, by default fake-service will use all cores")
@@ -168,7 +177,7 @@ func main() {
 
 	// create the load generator
 	// get the total CPU amount
-	// If original CPU percent is 10, however the service has only been allocated 10% of the available CPU then percent should be 1 as it is total of avaiable
+	// If original CPU percent is 10, however the service has only been allocated 10% of the available CPU then percent should be 1 as it is total of available
 	// Allocated Percentage = Allocated / (Max * Cores) * Percentage
 	// 100 / (1000 * 10) * 10 = 1
 
@@ -179,6 +188,9 @@ func main() {
 	if *loadCPUAllocated != 0 {
 		*loadCPUPercentage = *loadCPUAllocated / (*loadCPUClockSpeed * *loadCPUCores) * *loadCPUPercentage
 	}
+
+	// create a generator that will be used to create memory and CPU load per request
+	processLoadGenerator := load.NewNodeGenerator(*processLoadCPUCores, *processLoadCPUPercentage, *processLoadMemoryAllocated, *processLoadMemoryVariance, *processLoadMemoryVarianceFunction, *processLoadMemoryVariancePeriod, logger.Log().Named("process_load_generator"))
 
 	// create a generator that will be used to create memory and CPU load per request
 	generator := load.NewGenerator(*loadCPUCores, *loadCPUPercentage, *loadMemoryAllocated, *loadMemoryVariance, logger.Log().Named("load_generator"))
@@ -194,12 +206,13 @@ func main() {
 
 		c, err := client.NewGRPC(u2, *upstreamRequestTimeout)
 		if err != nil {
-			logger.Log().Error("Error creating GRPC client", "error", err)
+			logger.Log().Error("Error creating gRPC client", "error", err)
 			os.Exit(1)
 		}
 
 		grpcClients[u] = c
 	}
+	finishProcessLoadGenerator := processLoadGenerator.Generate()
 
 	logger.ServiceStarted(*name, *upstreamURIs, *upstreamWorkers, *listenAddress, *serviceType)
 
@@ -238,6 +251,7 @@ func main() {
 		grpcServer.GracefulStop()
 		timer.Stop()
 	}
+	finishProcessLoadGenerator()
 }
 
 func startupHTTP(
@@ -383,8 +397,8 @@ func startupGRPC(
 	return grpcServer
 }
 
-// tidyURIs splits the upstream URIs passed by environment variable and reuturns
-// a sanitised slice
+// tidyURIs splits the upstream URIs passed by environment variable and returns
+// a sanitized slice
 func tidyURIs(uris string) []string {
 	resp := []string{}
 	rawResp := strings.Split(uris, ",")

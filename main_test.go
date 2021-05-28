@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSanitisesURIParameters(t *testing.T) {
+func TestSanitizesURIParameters(t *testing.T) {
 	in := "http://abc.com, https://123.com,"
 
 	out := tidyURIs(in)

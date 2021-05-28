@@ -16,7 +16,12 @@ build_linux: build_ui
 build_darwin: build_ui
 	packr2 
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o bin/darwin/fake-service
-	packr2 clean
+#	packr2 clean
+
+rebuild_darwin: #build_ui
+#	packr2 
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o bin/darwin/fake-service
+#	packr2 clean
 
 build_arm6: build_ui
 	packr2 

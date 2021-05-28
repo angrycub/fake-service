@@ -95,7 +95,7 @@ func TestGRPCServiceHandlesRequestWithHTTPUpstreamError(t *testing.T) {
 	mc.On("Do", mock.Anything, mock.Anything).Return(http.StatusInternalServerError, []byte(`{"name": "upstream", "error": "boom", "code": 500}`), fmt.Errorf("It went bang"))
 
 	resp, err := fs.Handle(context.Background(), nil)
-	status, ok := status.FromError(err)
+	status, _ := status.FromError(err)
 
 	assert.Error(t, err)
 	assert.Nil(t, resp)

@@ -25,7 +25,7 @@ type Generator struct {
 	finished       chan struct{}
 }
 
-// NewGenerator creates a new load generator that can create atrificial memory and cpu pressure
+// NewGenerator creates a new load generator that can create artificial memory and cpu pressure
 func NewGenerator(cores, percentage float64, memoryBytes, memoryVariance int, logger hclog.Logger) *Generator {
 	return &Generator{logger, cores, percentage, memoryBytes, memoryVariance, false, nil}
 }
@@ -68,9 +68,9 @@ func (g *Generator) generateCPU() {
 		// every loop : run + sleep = 1 unit
 
 		// 1 unit = 100 ms may be the best
-		var unitHundresOfMicrosecond float64 = 1000
-		runMicrosecond := unitHundresOfMicrosecond * g.cpuPercentage
-		sleepMicrosecond := unitHundresOfMicrosecond*100 - runMicrosecond
+		var unitHundredsOfMicrosecond float64 = 1000
+		runMicrosecond := unitHundredsOfMicrosecond * g.cpuPercentage
+		sleepMicrosecond := unitHundredsOfMicrosecond*100 - runMicrosecond
 		for i := 0; i < int(g.cpuCoresCount); i++ {
 			go func() {
 				runtime.LockOSThread()
@@ -79,7 +79,7 @@ func (g *Generator) generateCPU() {
 					begin := time.Now()
 					for {
 						// run 100%
-						if time.Now().Sub(begin) > time.Duration(runMicrosecond)*time.Microsecond {
+						if time.Since(begin) > time.Duration(runMicrosecond)*time.Microsecond {
 							break
 						}
 					}

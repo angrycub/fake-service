@@ -61,7 +61,7 @@ func NewFakeServer(
 	}
 }
 
-// Handle implmements the FakeServer Handle interface method
+// Handle implements the FakeServer Handle interface method
 func (f *FakeServer) Handle(ctx context.Context, in *api.Nil) (*api.Response, error) {
 
 	// start timing the service this is used later for the total request time
@@ -69,7 +69,7 @@ func (f *FakeServer) Handle(ctx context.Context, in *api.Nil) (*api.Response, er
 	finished := f.loadGenerator.Generate()
 	defer finished()
 
-	hq := f.log.HandleGRCPRequest(ctx)
+	hq := f.log.HandleGRPCRequest(ctx)
 	defer hq.Finished()
 
 	resp := &response.Response{}
@@ -115,9 +115,9 @@ func (f *FakeServer) Handle(ctx context.Context, in *api.Nil) (*api.Response, er
 		}
 	}
 
-	// service time is equal to the randomised time - the current time take
+	// service time is equal to the randomized time - the current time take
 	d := f.duration.Calculate()
-	et := time.Now().Sub(ts)
+	et := time.Since(ts)
 	rd := d - et
 
 	if upstreamError != nil {
@@ -146,7 +146,7 @@ func (f *FakeServer) Handle(ctx context.Context, in *api.Nil) (*api.Response, er
 	// log response code
 	hq.SetMetadata("response", "0")
 
-	// caculate total elapsed time including duration
+	// Calculate total elapsed time including duration
 	te := time.Now()
 	et = te.Sub(ts)
 
