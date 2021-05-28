@@ -26,6 +26,7 @@ type NodeGenerator struct {
 	memoryVariancePeriod int
 	running              bool
 	currentMemory        int
+	currentTick          int
 	finished             chan struct{}
 }
 
@@ -43,6 +44,7 @@ func NewNodeGenerator(cores, percentage float64, memoryMBytes, memoryVariance in
 		memoryVariancePeriod,
 		false,
 		memoryMBytes * int(math.Pow(2, 20)),
+		0,
 		nil,
 	}
 }
@@ -126,7 +128,7 @@ func (g *NodeGenerator) generateVaryingMemory() {
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 			g.currentMemory = newMemLen
-			g.logger.Info("Allocated memory", "MB", bToMb(m.Alloc), "mem", newMemLen)
+			g.logger.Debug("Allocated memory", "MB", bToMb(m.Alloc), "mem", newMemLen)
 			time.Sleep(TICK_INTERVAL - time.Since(start))
 		}
 		// block until signal to complete load generation is received
@@ -166,7 +168,31 @@ func varianceRandom(g *NodeGenerator) int {
 }
 
 func varianceSineWave(g *NodeGenerator) int {
+	if g.memoryVariance > 0 {
+		varianceDuration := time.Duration(g.memoryVariancePeriod) * time.Second
+		ticksPerPeriod := int(varianceDuration / TICK_INTERVAL)
 
+		angle := float64(g.currentTick) * math.Pi
+		sin := math.Sin(float64(g.currentTick/g.memoryVariancePeriod) * math.Pi)
+		delta := sin * float64(g.memoryVariance)
+
+		if g.currentTick+1 < ticksPerPeriod {
+			g.currentTick = g.currentTick + 1
+		} else {
+			g.currentTick = 0
+		}
+
+		g.logger.Info(
+			"varianceSineWave",
+			"ticksPerPeriod", ticksPerPeriod,
+			"currentTick", g.currentTick,
+			"angle", angle,
+			"delta", delta,
+			"current_memory", g.currentMemory,
+		)
+		return g.currentMemory
+
+	}
 	return g.currentMemory
 }
 
