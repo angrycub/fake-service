@@ -1,6 +1,7 @@
 package load
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"runtime"
@@ -16,18 +17,29 @@ import (
 // Finished should be called when a function exits to stop the load generation
 // defined in generator.go
 
+type varianceFunc func(*NodeGenerator) int
+
 type NodeGenerator struct {
 	logger               hclog.Logger
 	cpuCoresCount        float64
 	cpuPercentage        float64
 	memoryMBytes         int
-	memoryVariance       int
+	memoryVariance       int // variance in percent
 	memoryVarianceFun    string
 	memoryVariancePeriod int
 	running              bool
-	currentMemory        int
-	currentTick          int
+	state                *NodeGeneratorState
 	finished             chan struct{}
+}
+
+type NodeGeneratorState struct {
+	baselineBytes    int       // memoryMBytes as bytes
+	maxVarianceBytes float64   // variancePercent of baselineBytes as a float
+	currentBytes     int       // memory in bytes - 1 MiB = 2^20 bytes
+	currentTick      int       // value in the interval [0,ticksPerPeriod)
+	startTime        time.Time // time the NodeGenerator was started
+	lastTickTime     time.Time // time the last tick started
+	ticksPerPeriod   int       // number of ticks that fit in the given period based on TICK_DURATION
 }
 
 const TICK_INTERVAL = 500 * time.Millisecond
@@ -43,8 +55,15 @@ func NewNodeGenerator(cores, percentage float64, memoryMBytes, memoryVariance in
 		memoryVarianceFun,
 		memoryVariancePeriod,
 		false,
-		memoryMBytes * int(math.Pow(2, 20)),
-		0,
+		&NodeGeneratorState{
+			memoryMBytes * int(math.Pow(2, 20)),
+			math.Pow(2, 20) * float64(memoryMBytes*memoryVariance) / 100,
+			memoryMBytes * int(math.Pow(2, 20)),
+			0,
+			time.Now(),
+			time.Now(),
+			int(time.Duration(memoryVariancePeriod) * time.Second / TICK_INTERVAL),
+		},
 		nil,
 	}
 }
@@ -114,12 +133,14 @@ func (g *NodeGenerator) generateCPU() {
 }
 
 func (g *NodeGenerator) generateVaryingMemory() {
-	calculateVariance := getVarianceFuncByName(g.memoryVarianceFun)
+	delta := g.getVarianceFuncByName()
 
 	go func() {
+		g.state.startTime = time.Now()
 		for g.running {
-			start := time.Now()
-			newMemLen := calculateVariance(g)
+			g.state.lastTickTime = time.Now()
+
+			newMemLen := g.state.currentBytes + delta(g)
 
 			mem := make([]byte, 0, newMemLen)
 			_ = mem
@@ -127,77 +148,68 @@ func (g *NodeGenerator) generateVaryingMemory() {
 			// print the memory consumption
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			g.currentMemory = newMemLen
+			g.state.currentBytes = newMemLen
 			g.logger.Debug("Allocated memory", "MB", bToMb(m.Alloc), "mem", newMemLen)
-			time.Sleep(TICK_INTERVAL - time.Since(start))
+			g.tick()
+			time.Sleep(TICK_INTERVAL - time.Since(g.state.lastTickTime)) // it's fast, but not free.
 		}
 		// block until signal to complete load generation is received
 		<-g.finished
 	}()
 }
 
-type varianceFunc func(*NodeGenerator) int
-
 func varianceLinear(g *NodeGenerator) int {
-	return g.currentMemory
+	lVal := 2*g.linearX()*g.state.maxVarianceBytes - g.state.maxVarianceBytes
+	delta := int(lVal)
+
+	g.logger.Info(
+		"varianceLinear",
+		"Tick", g.xAsFrac(),
+		"lPct", fmt.Sprintf("%0.5f", lVal),
+		"delta", bytesToMiBString(delta),
+	)
+	return delta
 }
 
 func varianceRandom(g *NodeGenerator) int {
-	if g.memoryVariance > 0 {
-		// convert mib to bytes
-		fMemoryMBytes := float64(g.memoryMBytes)
-		fMemoryBytes := fMemoryMBytes * math.Pow(2, 20)
-		rPct := rand.Float64()*2 - 1
-		varyByPct := float64(g.memoryVariance) * rPct / 100
-		delta := fMemoryBytes * varyByPct
+	rSign := rand.Intn(2) * -1                            // flip a coin for sign [0,1] -> [-1,0]
+	rPct := math.Copysign(rand.Float64(), float64(rSign)) // roll a random [0-1) and apply sign
+	delta := int(rPct * g.state.maxVarianceBytes)
 
-		newValue := int(fMemoryBytes + delta)
+	g.logger.Debug(
+		"varianceRandom",
+		"Tick", g.xAsFrac(),
+		"rPct", rPct,
+		"delta", bytesToMiBString(delta),
+	)
 
-		g.logger.Debug(
-			"varianceRandom",
-			"rPct", rPct,
-			"varyByPct", varyByPct,
-			"delta", delta,
-			"newValue", newValue,
-		)
-
-		return newValue
-	} else {
-		return g.currentMemory
-	}
+	return delta
 }
 
 func varianceSineWave(g *NodeGenerator) int {
-	if g.memoryVariance > 0 {
-		varianceDuration := time.Duration(g.memoryVariancePeriod) * time.Second
-		ticksPerPeriod := int(varianceDuration / TICK_INTERVAL)
+	rads := g.rad()
+	sin := math.Sin(rads)
+	delta := int(sin * g.state.maxVarianceBytes)
 
-		angle := float64(g.currentTick) * math.Pi
-		sin := math.Sin(float64(g.currentTick/g.memoryVariancePeriod) * math.Pi)
-		delta := sin * float64(g.memoryVariance)
+	g.logger.Debug(
+		"varianceSineWave",
+		"Tick", g.xAsFrac(),
+		"x", fmt.Sprintf("%0.5f", g.x()),
+		"angle", int(g.deg()),
+		"rads", g.radString(false),
+		"sin", fmt.Sprintf("%0.5f", sin),
+		"delta", bytesToMiBString(delta),
+	)
 
-		if g.currentTick+1 < ticksPerPeriod {
-			g.currentTick = g.currentTick + 1
-		} else {
-			g.currentTick = 0
-		}
-
-		g.logger.Info(
-			"varianceSineWave",
-			"ticksPerPeriod", ticksPerPeriod,
-			"currentTick", g.currentTick,
-			"angle", angle,
-			"delta", delta,
-			"current_memory", g.currentMemory,
-		)
-		return g.currentMemory
-
-	}
-	return g.currentMemory
+	return delta
 }
 
-func getVarianceFuncByName(varianceFunName string) varianceFunc {
-	switch varianceFunName {
+func (g *NodeGenerator) getVarianceFuncByName() varianceFunc {
+	varianceZero := func(_ *NodeGenerator) int { return 0 }
+	if g.memoryVariance == 0 {
+		return varianceZero
+	}
+	switch g.memoryVarianceFun {
 	case "linear":
 		return varianceLinear
 	case "random":
@@ -205,6 +217,92 @@ func getVarianceFuncByName(varianceFunName string) varianceFunc {
 	case "sine":
 		return varianceSineWave
 	default:
-		return varianceLinear
+		return varianceZero
 	}
+}
+
+func bytesToMiBString(bytes int) string {
+	return fmt.Sprintf("%0.2f MiB", float64(bytes)*math.Pow(2, -20))
+}
+
+// deg converts x in degrees
+func (g *NodeGenerator) deg() float64 {
+	return 360 * g.x()
+}
+
+// rad converts x to radians
+func (g *NodeGenerator) rad() float64 {
+	return 2 * math.Pi * g.x()
+}
+
+// radString makes a pretty fractional view of the radius for output
+func (g *NodeGenerator) radString(shouldReduce bool) string {
+	num, denom := g.state.currentTick*2, g.state.ticksPerPeriod
+	if shouldReduce {
+		num, denom = reduce(g.state.currentTick*2, g.state.ticksPerPeriod)
+	}
+	if num == 0 {
+		return "0"
+	}
+	// 2π is not in the period since it's adjusted to [0,2π)
+	if denom == 1 {
+		return "π"
+	}
+	if num == 1 {
+		return fmt.Sprintf("π/%d", denom)
+	}
+	return fmt.Sprintf("%dπ/%d", num, denom)
+}
+
+func (g *NodeGenerator) xAsFrac() string {
+	return fmt.Sprintf("%d/%d", g.state.currentTick, g.state.ticksPerPeriod)
+}
+
+// x returns the fraction created from currentTick over Ticks per period,
+// effectively mapping to an interval of [0,1)
+func (g *NodeGenerator) x() float64 {
+	x0 := g.state.currentTick
+	x1 := g.state.ticksPerPeriod
+	val := float64(x0) / float64(x1)
+	return val
+}
+
+// x returns the fraction created from currentTick over Ticks per period - 1,
+// effectively mapping to an interval of [0,1]
+func (g *NodeGenerator) linearX() float64 {
+	x0 := g.state.currentTick
+	x1 := g.state.ticksPerPeriod
+	val := float64(x0) / float64(x1-1)
+	return val
+}
+
+func (g *NodeGenerator) linearXAsFrac() string {
+	return fmt.Sprintf("%d/%d", g.state.currentTick, g.state.ticksPerPeriod-1)
+}
+
+// tick just moves time forward by one in the state
+func (g *NodeGenerator) tick() {
+	g.state.currentTick = (g.state.currentTick + 1) % g.state.ticksPerPeriod
+}
+
+// reduce fraction parts for prettiness
+func reduce(num, denom int) (int, int) {
+	if num == 0 {
+		return num, denom
+	}
+	gcd := gcd(num, denom)
+	if gcd == 1 {
+		return num, denom
+	}
+	return num / gcd, denom / gcd
+}
+
+// gcd returns the greatest common divisor (GCD) via Euclidean algorithm
+func gcd(a, b int) int {
+	for b != 0 {
+		t := b
+		b = a % b
+		a = t
+	}
+	return a
 }
